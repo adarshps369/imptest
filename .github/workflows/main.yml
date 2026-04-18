@@ -1,0 +1,41 @@
+name: Deploy Static Site
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create Release Folder
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+          "mkdir -p ${{ secrets.DEPLOY_PATH }}/releases/$(date +%s)"
+
+      - name: Upload Files
+        run: |
+          rsync -avz --delete \
+          ./ \
+          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.DEPLOY_PATH }}/releases/$(date +%s)
+
+      - name: Update Symlink
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+          cd ${{ secrets.DEPLOY_PATH }}
+          LATEST=$(ls -td releases/* | head -1)
+          ln -sfn $LATEST current
+          sudo systemctl reload nginx
+          EOF
